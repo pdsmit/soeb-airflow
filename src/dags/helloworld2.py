@@ -3,7 +3,7 @@ from airflow.operators.python_operator import PythonOperator
 from common import default_args, MessageOperator
 
 team_name = "SOEB"
-workload_name = "hello world v2"
+workload_name = "hello_world_v2"
 dag_id = team_name + "_" + workload_name
 
 
