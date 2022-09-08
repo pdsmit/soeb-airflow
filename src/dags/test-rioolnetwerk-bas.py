@@ -2,29 +2,26 @@ import requests
 import operator
 
 from airflow import DAG
+from airflow.models import Variable
 from airflow.operators.python import PythonOperator
 from airflow.providers.postgres.operators.postgres import PostgresOperator
+from common import SHARED_DIR, default_args, MessageOperator, quote_string
 from common.db import DatabaseEngine
+from contact_point.callbacks import get_contact_point_on_failure_callback
 from pathlib import Path
 from common.path import mk_dir
 from more_ds.network.url import URL
 from ogr2ogr_operator import Ogr2OgrOperator
 from sqlalchemy_create_object_operator import SqlAlchemyCreateObjectOperator
+from swift_operator import SwiftOperator
 
-team_name = "SOEB"
-workload_name = "Rioolnetwerk"
-dag_id = team_name + "_" + workload_name
+
+dag_id = "Rioolnetwerk"
+tmp_dir = f"{SHARED_DIR}/{dag_id}"
 db_conn: DatabaseEngine = DatabaseEngine()
-password: str = env("objectstore_CONN_waternet_PASSWD")
-user: str = env("objectstore_CONN_waternet_USER")
-base_url: str = URL(env("Objectstore_CONN_BASE_URL"))
 
-# iets wnr geen data ofzo
-class DataSourceError(Exception):
-    """Custom exeception for not available data source."""
-
-    pass
-
+variables: dict = Variable.get(DAG_ID, deserialize_json=True)
+data_endpoints: dict[str, str] = variables["temp_data"]
 
 with DAG(
     dag_id,
@@ -36,15 +33,24 @@ with DAG(
     ) as dag:
 
     # 1. Post info message on slack
-    task1 = MessageOperator(
+    slack_bot = MessageOperator(
         task_id="slack_at_start",
     )
 
     # 2. Create temp directory to store files
-    task2 = mk_dir(Path(tmp_dir))
+    make_temp_dir = mk_dir(Path(tmp_dir))
 
     # 3. Download data
-    task3 = PythonOperator(task_id="download_data", python_callable=get_data)
+    download_data = [
+        SwiftOperator(
+            task_id=f"download_{file_name}",
+            swift_conn_id="objectstore_dataservices_waternet",
+            container="Dataservices",
+            object_id=url,
+            output_path=f"{tmp_dir}/{url}",
+        )
+        for file_name, url in data_endpoints.items()
+    ]
 
      
     # 4. Import .gpkg to Postgresql
@@ -61,7 +67,7 @@ with DAG(
         db_conn=db_conn        
     )
 (
-  task1 >> task2 >> task3 >> task4    
+  slack_bot >> make_temp_dir >> download_data
 )
 
 dag.doc_md = """
