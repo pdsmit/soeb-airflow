@@ -44,8 +44,8 @@ with DAG(
     download_data = [
         SwiftOperator(
             task_id=f"download_{file_name}",
-            swift_conn_id="objectstore_dataservices_waternet",
-            container="Dataservices",
+            swift_conn_id="objectstore-waternet", # laatste 2 namen van key-vault-string gebruiken (airflow-connections-objectstore-waternet)
+            container="production", # map in de objectstore
             object_id=url,
             output_path=f"{tmp_dir}/{url}",
         )
