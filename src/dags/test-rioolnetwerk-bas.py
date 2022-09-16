@@ -8,7 +8,7 @@ from airflow.models import Variable
 from airflow.operators.python import PythonOperator
 from airflow.providers.postgres.operators.postgres import PostgresOperator
 from common import SHARED_DIR, default_args, MessageOperator, quote_string
-from common.db import DatabaseEngine
+from common.db import define_temp_db_schema, pg_params
 from contact_point.callbacks import get_contact_point_on_failure_callback
 from pathlib import Path
 from common.path import mk_dir
@@ -20,8 +20,9 @@ from swift_operator import SwiftOperator
 
 dag_id: Final = "rioolnetwerk"
 tmp_dir: str = f"{SHARED_DIR}/{dag_id}"
+tmp_database_schema: str = define_temp_db_schema(dataset_name=dag_id)
 variables: dict = Variable.get(dag_id, deserialize_json=True)
-files_to_download = variables["files_to_download"]
+files_to_download: dict[str, str] = variables["files_to_download"]
 total_checks = []
 count_checks = []
 geo_checks = []
@@ -48,6 +49,8 @@ with DAG(
     )
 
     # 2. Create temp directory to store files
+    # NOTE kan ook met bashoperator:
+    # make_tmp_dir = BashOperator(task_id="mk_tmp_dir", bash_command=f"mkdir -p {tmp_dir}")
     make_temp_dir = mk_dir(Path(tmp_dir))
 
     # 3. Download data
@@ -60,28 +63,34 @@ with DAG(
             output_path=f"{tmp_dir}/{url}",
         )
         #for file_name, url in data_endpoints.items() # check vars.yml
-        for file_name, url in files_to_download.values()
+        for file_name, url in files_to_download.items()
     ]
 
      
     # 4. Import .gpkg to Postgresql
-    task4 = Ogr2OgrOperator(
-        task_id="import_data",
-        target_table_name=f"{dag_id}_{dag_id}_new",
-        input_file=f"{tmp_dir}/{dag_id}.gpkg",
-        s_srs="EPSG:28992",
-        t_srs="EPSG:28992",
-        auto_detect_type="YES",
-        geometry_name="geometry",
-        fid="fid",
-        mode="PostgreSQL",
-        db_conn=db_conn        
+    # NOTE: ogr2ogr demands the PK is of type integer.
+    import_data = [
+        Ogr2OgrOperator(
+            task_id="import_data_{file_name}",
+            target_table_name=f"{dag_id}_{file_name}_new",
+            db_schema=tmp_database_schema,
+            input_file=f"{tmp_dir}/{dag_id}.gpkg",
+            s_srs="EPSG:28992",
+            t_srs="EPSG:28992",
+            auto_detect_type="YES",
+            geometry_name="geometry",
+            fid="fid",
+            mode="PostgreSQL",
+        )
+        for file_name, url in files_to_download.items()
+    ]
+    # FLOW.
+    (
+    slack_at_start
+    >> make_temp_dir 
+    >> download_data
+    >> import_data
     )
-(
-  slack_at_start
-  >> make_temp_dir 
-  >> download_data
-)
 
 dag.doc_md = """
     #### DAG summary
