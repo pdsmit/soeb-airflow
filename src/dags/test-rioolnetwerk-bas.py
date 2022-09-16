@@ -20,7 +20,7 @@ dag_id = "Rioolnetwerk"
 tmp_dir = f"{SHARED_DIR}/{dag_id}"
 db_conn: DatabaseEngine = DatabaseEngine()
 
-variables: dict = Variable.get(DAG_ID, deserialize_json=True)
+variables: dict = Variable.get(dag_id, deserialize_json=True)
 data_endpoints: dict[str, str] = variables["temp_data"]
 
 with DAG(
