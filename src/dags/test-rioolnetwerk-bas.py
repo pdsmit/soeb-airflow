@@ -1,6 +1,8 @@
 import requests
 import operator
 
+from functools import partial
+from typing import Final
 from airflow import DAG
 from airflow.models import Variable
 from airflow.operators.python import PythonOperator
@@ -16,23 +18,32 @@ from sqlalchemy_create_object_operator import SqlAlchemyCreateObjectOperator
 from swift_operator import SwiftOperator
 
 
-dag_id = "Rioolnetwerk"
-tmp_dir = f"{SHARED_DIR}/{dag_id}"
+dag_id: Final = "rioolnetwerk"
+tmp_dir: str = f"{SHARED_DIR}/{dag_id}"
 variables: dict = Variable.get(dag_id, deserialize_json=True)
 files_to_download = variables["files_to_download"]
+total_checks = []
+count_checks = []
+geo_checks = []
+check_name = {}
+
+# prefill pg_params method with dataset name so
+# it can be used for the database connection as a user.
+# only applicable for Azure connections.
+db_conn_string = partial(pg_params, dataset_name=dag_id)
 
 
 with DAG(
     dag_id,
+    description="Rioolnetwerken aangeleverd door Waternet",
     default_args=default_args,
     template_searchpath=["/"],
     user_defined_filters={"quote": quote_string},
-    description="Rioolnetwerken aangeleverd door Waternet",
     on_failure_callback=get_contact_point_on_failure_callback(dataset_id=dag_id),
     ) as dag:
 
     # 1. Post info message on slack
-    slack_bot = MessageOperator(
+    slack_at_start = MessageOperator(
         task_id="slack_at_start",
     )
 
@@ -48,7 +59,8 @@ with DAG(
             object_id=url,
             output_path=f"{tmp_dir}/{url}",
         )
-        for file_name, url in data_endpoints.items()
+        #for file_name, url in data_endpoints.items() # check vars.yml
+        for file_name, url in files_to_download.values()
     ]
 
      
@@ -66,7 +78,9 @@ with DAG(
         db_conn=db_conn        
     )
 (
-  slack_bot >> make_temp_dir >> download_data
+  slack_at_start
+  >> make_temp_dir 
+  >> download_data
 )
 
 dag.doc_md = """
