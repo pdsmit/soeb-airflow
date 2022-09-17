@@ -18,11 +18,11 @@ from sqlalchemy_create_object_operator import SqlAlchemyCreateObjectOperator
 from swift_operator import SwiftOperator
 
 
-dag_id: Final = "rioolnetwerk"
+dag_id = "rioolnetwerk"
 tmp_dir: str = f"{SHARED_DIR}/{dag_id}"
 tmp_database_schema: str = define_temp_db_schema(dataset_name=dag_id)
 variables: dict = Variable.get(dag_id, deserialize_json=True)
-files_to_download: dict[str, str] = variables["files_to_download"]
+files_to_download = variables["files_to_download"]
 total_checks = []
 count_checks = []
 geo_checks = []
@@ -63,18 +63,21 @@ with DAG(
             output_path=f"{tmp_dir}/{url}",
         )
         #for file_name, url in data_endpoints.items() # check vars.yml
-        for file_name, url in files_to_download.items()
+        # op meerdere plekken zie ik .values() vs .items() staan...ff checken
+        for file_name, url in files_to_download.values()
     ]
 
      
     # 4. Import .gpkg to Postgresql
     # NOTE: ogr2ogr demands the PK is of type integer.
+    # ook hier kom ik BashOperator tegen die ogr2ogr gebruikt...
     import_data = [
         Ogr2OgrOperator(
             task_id="import_data_{file_name}",
             target_table_name=f"{dag_id}_{file_name}_new",
             db_schema=tmp_database_schema,
-            input_file=f"{tmp_dir}/{dag_id}.gpkg",
+            input_file=f"{tmp_dir}/{dag_id}",
+            # f"-nln {file_name}",
             s_srs="EPSG:28992",
             t_srs="EPSG:28992",
             auto_detect_type="YES",
