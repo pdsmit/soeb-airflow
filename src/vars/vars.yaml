@@ -1,2 +1,4 @@
 rioolnetwerk:
-  files_to_download: Waternet_Assets_Levering.gpkg
+  files_to_download: 
+    waternet: Waternet_Assets_Levering.gpkg
+    dummy: Disclaimer + uitleg Z bepaling.txt
